@@ -76,6 +76,8 @@ types.AXTree = {
   level: t.Optional(t.Number),
 
   tag: t.Optional(t.String),
+
+  foundObject: t.Optional(t.Boolean),
 }
 
 const Browser = {
@@ -654,7 +656,9 @@ const Accessibility = {
   events: {},
   methods: {
     'getFullAXTree': {
-      params: {},
+      params: {
+        objectId: t.Optional(t.String),
+      },
       returns: {
         tree:types.AXTree
       },

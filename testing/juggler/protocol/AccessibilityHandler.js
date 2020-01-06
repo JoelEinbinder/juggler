@@ -4,8 +4,8 @@ class AccessibilityHandler {
     this._contentSession = contentSession;
   }
 
-  async getFullAXTree() {
-    return await this._contentSession.send('Page.getFullAXTree');
+  async getFullAXTree(params) {
+    return await this._contentSession.send('Page.getFullAXTree', params);
   }
 
   dispose() { }

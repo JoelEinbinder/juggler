@@ -519,7 +519,15 @@ class PageAgent {
     frame.textInputProcessor().commitCompositionWith(text);
   }
 
-  async getFullAXTree() {
+  async getFullAXTree({objectId}) {
+    let unsafeObject = null;
+    if (objectId) {
+      const executionContext = this._ensureExecutionContext(this._frameTree.mainFrame());
+      unsafeObject = executionContext.unsafeObject(objectId);
+      if (!unsafeObject)
+        throw new Error(`No object found for id "${objectId}"`);
+    }
+
     const service = Cc["@mozilla.org/accessibilityService;1"]
       .getService(Ci.nsIAccessibilityService);
     const document = this._frameTree.mainFrame().domWindow().document;
@@ -564,6 +572,8 @@ class PageAgent {
         role: service.getStringRole(accElement.role),
         name: accElement.name || '',
       };
+      if (unsafeObject && unsafeObject === accElement.DOMNode)
+        tree.foundObject = true;
       for (const userStringProperty of [
         'value',
         'description'
@@ -601,7 +611,7 @@ class PageAgent {
       if (states['expanded'])
         tree['expanded'] = true;
       else if (states['collapsed'])
-        tree['expanded'] = false
+        tree['expanded'] = false;
       if (!states['enabled'])
         tree['disabled'] = true;
 
