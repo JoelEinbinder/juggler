@@ -16,6 +16,12 @@ class BrowserHandler {
   }
 
   async close() {
+    let browserWindow = Services.wm.getMostRecentWindow(
+      "navigator:browser"
+    );
+    if (browserWindow && browserWindow.gBrowserInit) {
+      await browserWindow.gBrowserInit.idleTasksFinishedPromise;
+    }
     Services.startup.quit(Ci.nsIAppStartup.eForceQuit);
   }
 
