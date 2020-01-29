@@ -705,6 +705,9 @@ class PageAgent {
     const document = this._frameTree.mainFrame().domWindow().document;
     const docAcc = service.getAccessibleFor(document);
 
+    while (docAcc.document.isUpdatePendingForJugglerAccessibility)
+      await new Promise(x => this._frameTree.mainFrame().domWindow().requestAnimationFrame(x));
+
     async function waitForQuiet() {
       let state = {};
       docAcc.getState(state, {});
