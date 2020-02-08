@@ -284,6 +284,13 @@ class PageAgent {
         this._onNavigationCommitted(frame);
       if (frame.pendingNavigationId())
         this._onNavigationStarted(frame);
+      const {readyState} = frame.domWindow().document;
+      if (readyState === 'complete') {
+        this._emitEventForFrame(frame, 'DOMContentLoaded');
+        this._emitEventForFrame(frame, 'load');
+      } else if (readyState === 'interactive') {
+        this._emitEventForFrame(frame, 'DOMContentLoaded');
+      }
     }
 
     this._eventListeners = [
@@ -359,10 +366,7 @@ class PageAgent {
     const frame = this._frameTree.frameForDocShell(docShell);
     if (!frame)
       return;
-    this._session.emitEvent('Page.eventFired', {
-      frameId: frame.id(),
-      name: 'DOMContentLoaded',
-    });
+    this._emitEventForFrame(frame, 'DOMContentLoaded');
   }
 
   _onError(errorEvent) {
@@ -382,10 +386,7 @@ class PageAgent {
     const frame = this._frameTree.frameForDocShell(docShell);
     if (!frame)
       return;
-    this._session.emitEvent('Page.eventFired', {
-      frameId: frame.id(),
-      name: 'load'
-    });
+    this._emitEventForFrame(frame, 'load');
   }
 
   _onLoad(event) {
@@ -393,9 +394,13 @@ class PageAgent {
     const frame = this._frameTree.frameForDocShell(docShell);
     if (!frame)
       return;
+    this._emitEventForFrame(frame, 'load');
+  }
+
+  _emitEventForFrame(frame, eventName) {
     this._session.emitEvent('Page.eventFired', {
       frameId: frame.id(),
-      name: 'load'
+      name: eventName,
     });
   }
 
