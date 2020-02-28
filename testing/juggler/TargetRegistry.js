@@ -43,6 +43,9 @@ class TargetRegistry {
     });
     this._mainWindow.gBrowser.tabContainer.addEventListener('TabClose', event => {
       const tab = event.target;
+      const browserContext = this._contextManager.browserContextForUserContextId(tab.userContextId);
+      if (browserContext)
+        browserContext.removeTab(tab);
       const target = this._tabToTarget.get(tab);
       if (!target)
         return;
@@ -113,11 +116,18 @@ class TargetRegistry {
     if (this._tabToTarget.has(tab))
       throw new Error(`Internal error: two targets per tab`);
     const openerTarget = tab.openerTab ? this._tabToTarget.get(tab.openerTab) : null;
-    const target = new PageTarget(this, tab, this._contextManager.browserContextForUserContextId(tab.userContextId), openerTarget);
+    const browserContext = this._contextManager.browserContextForUserContextId(tab.userContextId);
+    if (browserContext)
+      browserContext.addTab(tab);
+    const target = new PageTarget(this, tab, browserContext, openerTarget);
     this._targets.set(target.id(), target);
     this._tabToTarget.set(tab, target);
     this.emit(TargetRegistry.Events.TargetCreated, target.info());
     return target;
+  }
+
+  tabsInBrowserContext(browserContext) {
+    return Array.from(this._tabToTarget.keys()).filter(tab => tab.userContextId === browserContext.userContextId);
   }
 
   observe(subject, topic, data) {

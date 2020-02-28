@@ -3,6 +3,13 @@ const {ContentSession} = ChromeUtils.import('chrome://juggler/content/content/Co
 const {FrameTree} = ChromeUtils.import('chrome://juggler/content/content/FrameTree.js');
 const {NetworkMonitor} = ChromeUtils.import('chrome://juggler/content/content/NetworkMonitor.js');
 const {ScrollbarManager} = ChromeUtils.import('chrome://juggler/content/content/ScrollbarManager.js');
+const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const permissionObserver = {
+  observe() {
+    sendAsyncMessage('juggler:perm-changed', {});
+  }
+};
+Services.obs.addObserver(permissionObserver, 'perm-changed');
 
 const sessions = new Map();
 const scrollbarManager = new ScrollbarManager(docShell);

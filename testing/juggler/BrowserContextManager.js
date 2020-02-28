@@ -76,6 +76,8 @@ class BrowserContext {
     this._manager._userContextIdToBrowserContext.set(this.userContextId, this);
     this.options = options || {};
     this.options.scriptsToEvaluateOnNewDocument = [];
+    this._tabs = new Set();
+    this._tabDestoryed = new WeakMap();
   }
 
   destroy() {
@@ -92,14 +94,64 @@ class BrowserContext {
     this.emit(BrowserContext.Events.ScriptToEvaluateOnNewDocumentAdded, script);
   }
 
-  grantPermissions(origin, permissions) {
+  async grantPermissions(origin, permissions) {
     const attrs = {userContextId: this.userContextId};
     const principal = Services.scriptSecurityManager.createContentPrincipal(NetUtil.newURI(origin), attrs);
     this._principals.push(principal);
+    let observedAChange = false;
+    const observer = {
+      observe() {
+        observedAChange = true;
+      }
+    };
+    Services.obs.addObserver(observer, 'perm-changed');
+    const tabs = [...this._tabs];
     for (const permission of ALL_PERMISSIONS) {
       const action = permissions.includes(permission) ? Ci.nsIPermissionManager.ALLOW_ACTION : Ci.nsIPermissionManager.DENY_ACTION;
+      const {promise, teardown} = waitForPermChangeInTabs.call(this, tabs);
+      observedAChange = false;
       Services.perms.addFromPrincipal(principal, permission, action);
+      if (observedAChange)
+        await promise;
+      teardown();
     }
+    Services.obs.removeObserver(observer, 'perm-changed');
+
+    function waitForPermChangeInTabs(tabs) {
+      const promises = [];
+      const teardowns = [];
+      for (const tab of tabs) {
+        const {promise, teardown} = waitForPermChangeInTab.call(this, tab);
+        promises.push(promise);
+        teardowns.push(teardown);
+      }
+      return {
+        promise: Promise.all(promises),
+        teardown: () => teardowns.forEach(t => t())
+      }
+    }
+    function waitForPermChangeInTab(tab) {
+      let resolve;
+      const promise = new Promise(x => resolve = x);
+      this._tabDestoryed.set(tab, resolve);
+      tab.linkedBrowser.messageManager.addMessageListener('juggler:perm-changed', resolve);
+      const teardown = () => {
+        this._tabDestoryed.delete(tab);
+        tab.linkedBrowser.messageManager.removeMessageListener('juggler:perm-changed', resolve);
+      }
+      return {promise, teardown}
+    }
+  }
+
+  addTab(tab) {
+    this._tabs.add(tab);
+  }
+
+  removeTab(tab) {
+    const destoryedCallback = this._tabDestoryed.get(tab);
+    if (destoryedCallback)
+      destoryedCallback();
+    this._tabs.delete(tab);
   }
 
   resetPermissions() {

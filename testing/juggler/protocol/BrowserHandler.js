@@ -35,8 +35,8 @@ class BrowserHandler {
     }
   }
 
-  grantPermissions({browserContextId, origin, permissions}) {
-    this._contextManager.browserContextForId(browserContextId).grantPermissions(origin, permissions);
+  async grantPermissions({browserContextId, origin, permissions}) {
+    await this._contextManager.browserContextForId(browserContextId).grantPermissions(origin, permissions);
   }
 
   resetPermissions({browserContextId}) {
