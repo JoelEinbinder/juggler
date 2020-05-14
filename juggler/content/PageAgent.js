@@ -6,6 +6,12 @@ const Cu = Components.utils;
 
 const {Helper} = ChromeUtils.import('chrome://juggler/content/Helper.js');
 const {NetUtil} = ChromeUtils.import('resource://gre/modules/NetUtil.jsm');
+const dragService = Cc["@mozilla.org/widget/dragservice;1"].getService(
+  Ci.nsIDragService
+);
+const obs = Cc["@mozilla.org/observer-service;1"].getService(
+  Ci.nsIObserverService
+);
 
 const helper = new Helper();
 
@@ -157,6 +163,7 @@ class PageAgent {
     this._docShell = docShell;
     this._initialDPPX = docShell.contentViewer.overrideDPPX;
     this._customScrollbars = null;
+    this._dataTransfer = null;
   }
 
   async _awaitViewportDimensions({width, height}) {
@@ -664,6 +671,12 @@ class PageAgent {
   }
 
   async _dispatchKeyEvent({type, keyCode, code, key, repeat, location, text}) {
+    // key events don't fire if we are dragging.
+    if (this._dataTransfer) {
+      if (type === 'keydown' && key === 'Escape')
+        this._cancelDragIfNeeded();
+      return;
+    }
     const frame = this._frameTree.mainFrame();
     const tip = frame.textInputProcessor();
     if (key === 'Meta' && Services.appinfo.OS !== 'Darwin')
@@ -710,8 +723,61 @@ class PageAgent {
     return {defaultPrevented};
   }
 
+  _startDragSessionIfNeeded() {
+    const sess = dragService.getCurrentSession();
+    if (sess) return;
+    dragService.startDragSessionForTests(
+      Ci.nsIDragService.DRAGDROP_ACTION_MOVE |
+        Ci.nsIDragService.DRAGDROP_ACTION_COPY |
+        Ci.nsIDragService.DRAGDROP_ACTION_LINK
+    );
+  }
+
+  _simulateDragEvent(type, x, y, modifiers) {
+    const window = this._frameTree.mainFrame().domWindow();
+    const element = window.windowUtils.elementFromPoint(x, y, false, false);
+    const event = window.document.createEvent('DragEvent');
+
+    event.initDragEvent(
+      type,
+      true /* bubble */,
+      true /* cancelable */,
+      window,
+      0 /* clickCount */,
+      window.mozInnerScreenX + x,
+      window.mozInnerScreenY + y,
+      x,
+      y,
+      modifiers & 2 /* ctrlkey */,
+      modifiers & 1 /* altKey */,
+      modifiers & 4 /* shiftKey */,
+      modifiers & 8 /* metaKey */,
+      0 /* button */, // firefox always has the button as 0 on drops, regardless of which was pressed
+      null /* relatedTarget */,
+      this._dataTransfer
+    );
+
+    window.windowUtils.dispatchDOMEventViaPresShellForTesting(element, event);
+    if (type === 'drop')
+      dragService.endDragSession(true);
+  }
+
+  _cancelDragIfNeeded() {
+    this._dataTransfer = null;
+    const sess = dragService.getCurrentSession();
+    if (sess)
+      dragService.endDragSession(false);
+  }
+
   async _dispatchMouseEvent({type, x, y, button, clickCount, modifiers, buttons}) {
+    this._startDragSessionIfNeeded();
+    const trapDrag = subject => {
+      this._dataTransfer = subject.mozCloneForEvent('drop');
+    }
+
     const frame = this._frameTree.mainFrame();
+
+    obs.addObserver(trapDrag, 'on-datatransfer-available');
     frame.domWindow().windowUtils.sendMouseEvent(
       type,
       x,
@@ -725,6 +791,8 @@ class PageAgent {
       undefined /*isDOMEventSynthesized*/,
       undefined /*isWidgetEventSynthesized*/,
       buttons);
+    obs.removeObserver(trapDrag, 'on-datatransfer-available');
+
     if (type === 'mousedown' && button === 2) {
       frame.domWindow().windowUtils.sendMouseEvent(
         'contextmenu',
@@ -739,6 +807,16 @@ class PageAgent {
         undefined /*isDOMEventSynthesized*/,
         undefined /*isWidgetEventSynthesized*/,
         buttons);
+    }
+
+    // update drag state
+    if (this._dataTransfer) {
+      if (type === 'mousemove')
+        this._simulateDragEvent('dragover', x, y, modifiers);
+      else if (type === 'mouseup') // firefox will do drops when any mouse button is released
+        this._simulateDragEvent('drop', x, y, modifiers);
+    } else {
+      this._cancelDragIfNeeded();
     }
   }
 
